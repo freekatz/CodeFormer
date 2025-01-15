@@ -1,7 +1,7 @@
 # general settings
 name: CodeFormer_stage2
 model_type: CodeFormerIdxModel2
-num_gpu: 8
+num_gpu: 4
 manual_seed: 0
 
 # dataset and data loader settings
@@ -9,7 +9,7 @@ datasets:
   train:
     name: FFHQ
     type: FFHQBlindDataset
-    dataroot_gt: 'ffhq_256'
+    dataroot_gt: '/root/autodl-tmp/ffhq_256'
     filename_tmpl: '{}'
     io_backend:
       type: disk
@@ -37,7 +37,7 @@ datasets:
 
     # data loader
     num_worker_per_gpu: 12
-    batch_size_per_gpu: 4
+    batch_size_per_gpu: 64
     dataset_enlarge_ratio: 100
     prefetch_mode: ~
 
@@ -61,7 +61,7 @@ network_g:
   latent_size: 32
   codebook_size: 4096
   connect_list: ['32', '64', '128', '256']
-  vqvae_path: ''
+  vqvae_path: '/root/autodl-fs/pt_vae_ch160v4096z32.pth'
 
 network_vqvae: # this config is needed if no pre-calculated latent
   type: VQVAE
@@ -70,7 +70,7 @@ network_vqvae: # this config is needed if no pre-calculated latent
   ch: 160
   test_mode: True
   share_quant_resi: 4
-  v_patch_nums: (1, 2, 3, 4, 5, 6, 8, 10, 13, 16)
+  v_patch_nums: [1, 2, 3, 4, 5, 6, 8, 10, 13, 16]
 
 # path
 path:
@@ -106,7 +106,7 @@ train:
   #   restart_weights: [1]
   #   eta_min: !!float 2e-5 # no lr reduce in official vqgan code
 
-  total_iter: 500000
+  total_iter: 62500
 
   warmup_iter: -1  # no warm up
   ema_decay: 0.995
@@ -132,7 +132,7 @@ val:
 # logging settings
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 1e4
+  save_checkpoint_freq: !!float 2e3
   use_tb_logger: true
   wandb:
     project: ~

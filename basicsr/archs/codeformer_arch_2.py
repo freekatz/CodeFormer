@@ -1,4 +1,6 @@
 import math
+from functools import partial
+
 import numpy as np
 import torch
 from torch import nn, Tensor
@@ -158,9 +160,21 @@ class Fuse_sft_block(nn.Module):
         return out
 
 
+class AdaLNBeforeHead(nn.Module):
+    def __init__(self, C, D, norm_layer):  # C: embed_dim, D: cond_dim
+        super().__init__()
+        self.C, self.D = C, D
+        self.ln_wo_grad = norm_layer(C, elementwise_affine=False)
+        self.ada_lin = nn.Sequential(nn.SiLU(inplace=False), nn.Linear(D, 2 * C))
+
+    def forward(self, x_BLC: torch.Tensor, cond_BD: torch.Tensor):
+        scale, shift = self.ada_lin(cond_BD).view(-1, 1, 2, self.C).unbind(2)
+        return self.ln_wo_grad(x_BLC).mul(scale.add(1)).add_(shift)
+
+
 @ARCH_REGISTRY.register()
 class CodeFormer2(nn.Module):
-    def __init__(self, dim_embd=512, n_head=8, n_layers=9,
+    def __init__(self, dim_embd=640, n_head=8, n_layers=9,
                 codebook_size=4096, latent_size=32,
                 connect_list=['32', '64', '128', '256'], vqvae_path=None):
         super(CodeFormer2, self).__init__()
@@ -180,8 +194,12 @@ class CodeFormer2(nn.Module):
         self.dim_embd = dim_embd
         self.dim_mlp = dim_embd*2
 
-        self.position_emb = nn.Parameter(torch.zeros(256, self.dim_embd))
-        self.feat_emb = nn.Linear(latent_size, self.dim_embd)
+        self.position_emb = nn.Parameter(torch.zeros(680, self.dim_embd))
+        # self.feat_emb = nn.Linear(latent_size * len(self.vae.v_patch_nums), self.dim_embd)
+        self.feat_emb = nn.ModuleList(
+            nn.Embedding(codebook_size, self.dim_embd)
+            for (ph, pw) in self.vae.patch_hws
+        )
 
         # transformer
         self.ft_layers = nn.Sequential(*[TransformerSALayer(embed_dim=dim_embd, nhead=n_head, dim_mlp=self.dim_mlp, dropout=0.0) 
@@ -203,28 +221,36 @@ class CodeFormer2(nn.Module):
 
     def forward(self, x, w=0, detach_16=True, code_only=False, adain=False):
         # ################### Encoder #####################
-        x, vq_loss, _ = self.vae.quantize(self.vae.quant_conv(self.vae.encoder(inp)), ret_usages=False)
+        # torch.Size([4, 320, 16, 16]) -> torch.Size([4, 640, 256]) -> torch.Size([4, 680, 640])
+        # torch.Size([4, 680]) -> torch.Size([4, 680, 4096])
+        x = self.vae.quant_conv(self.vae.encoder(x))
+        idx_list = self.vae.quantize.f_to_idxBl_or_fhat(x, to_fhat=False)
 
-        lq_feat = x
         # ################# Transformer ###################
         # quant_feat, codebook_loss, quant_stats = self.quantize(lq_feat)
         pos_emb = self.position_emb.unsqueeze(1).repeat(1,x.shape[0],1)
+
         # BCHW -> BC(HW) -> (HW)BC
-        feat_emb = self.feat_emb(lq_feat.flatten(2).permute(2,0,1))
-        query_emb = feat_emb
+        idx_embed_all = []
+        for i, idx in enumerate(idx_list):
+            idx_embed_all.append(self.feat_emb[i](idx))
+        idx_embed = torch.cat(idx_embed_all, dim=1).permute(1, 0, 2)
+        # torch.Size([256, 2, 640])
+        query_emb = idx_embed
         # Transformer encoder
         for layer in self.ft_layers:
             query_emb = layer(query_emb, query_pos=pos_emb)
 
+        # torch.Size([256, 2, 640])
         # output logits
-        logits = self.idx_pred_layer(query_emb) # (hw)bn
-        logits = logits.permute(1,0,2) # (hw)bn -> b(hw)n
+        logits = self.idx_pred_layer(query_emb)
+        logits = logits.permute(1,0,2)
 
-        return logits, lq_feat
+        return logits
 
 if __name__ == '__main__':
     code_former = CodeFormer2(
-        dim_embd=512,
+        dim_embd=64,
         n_head=8,
         n_layers=2,
         latent_size=32,
@@ -233,6 +259,6 @@ if __name__ == '__main__':
         vqvae_path=r'/Users/katz/Downloads/vae_ch160v4096z32.pth',
     )
     inp = torch.randn(2, 3, 256, 256)
-    logits, lq_feat = code_former(inp, w=0.1, code_only=True)
-    print(logits.shape)
-    print(lq_feat.shape)
+    logits = code_former(inp, w=0.1, code_only=True)
+
+    print(logits.shape)  # torch.Size([2, 680, 640])

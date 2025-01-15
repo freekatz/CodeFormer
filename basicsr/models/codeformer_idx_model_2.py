@@ -88,28 +88,30 @@ class CodeFormerIdxModel2(SRModel):
         # optimize net_g
         self.optimizer_g.zero_grad()
 
-        x = self.hq_vqvae_fix.quant_conv(self.hq_vqvae_fix.encoder(self.gt))
+        x_hq = self.hq_vqvae_fix.quant_conv(self.hq_vqvae_fix.encoder(self.gt))
         if self.generate_idx_gt:
             # x = self.hq_vqvae_fix.encoder(self.gt)
             # _, _, quant_stats = self.hq_vqvae_fix.quantize(x)
             # min_encoding_indices = quant_stats['min_encoding_indices']
             # self.idx_gt = min_encoding_indices.view(self.b, -1)
-            self.idx_gt = self.hq_vqvae_fix.quantize.f_to_idxBl_or_fhat(x, to_fhat=False)
+            idx_gt = self.hq_vqvae_fix.quantize.f_to_idxBl_or_fhat(x_hq, to_fhat=False)
+            self.idx_gt = torch.cat(idx_gt, dim=1)
 
-        if self.hq_feat_loss:
-            # quant_feats
-            # quant_feat_gt = self.net_g.module.quantize.get_codebook_feat(self.idx_gt, shape=[self.b,16,16,256])
-            quant_feat_gt = self.hq_vqvae_fix.quantize.f_to_idxBl_or_fhat(x, to_fhat=True)
+        # if self.hq_feat_loss:
+        #     # quant_feats
+        #     # quant_feat_gt = self.net_g.module.quantize.get_codebook_feat(self.idx_gt, shape=[self.b,16,16,256])
+        #     quant_feat_gt_list = self.hq_vqvae_fix.quantize.f_to_idxBl_or_fhat(x_hq, to_fhat=True)
+        #     quant_feat_gt = torch.cat(quant_feat_gt_list, dim=1)
 
-        logits, lq_feat = self.net_g(self.input, w=0, code_only=True)
+        logits = self.net_g(self.input, w=0, code_only=True)
 
         l_g_total = 0
         loss_dict = OrderedDict()
-        # hq_feat_loss
-        if self.hq_feat_loss: # codebook loss 
-            l_feat_encoder = torch.mean((quant_feat_gt.detach()-lq_feat)**2) * self.feat_loss_weight
-            l_g_total += l_feat_encoder
-            loss_dict['l_feat_encoder'] = l_feat_encoder
+        # # hq_feat_loss
+        # if self.hq_feat_loss: # codebook loss
+        #     l_feat_encoder = torch.mean((quant_feat_gt.detach()-lq_feat)**2) * self.feat_loss_weight
+        #     l_g_total += l_feat_encoder
+        #     loss_dict['l_feat_encoder'] = l_feat_encoder
 
         # cross_entropy_loss
         if self.cross_entropy_loss:

@@ -10,10 +10,8 @@ rm -rf output
 mkdir -p output
 cd output
 cp -r ../hack ./
-cp -r ../assets ./
 cp -r ../basicsr ./
 cp -r ../facelib ./
-cp -r ../inputs ./
 cp -r ../options ./
 cp -r ../scripts ./
 cp -r ../Makefile ./

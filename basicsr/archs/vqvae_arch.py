@@ -437,8 +437,7 @@ class VectorQuantizer2(nn.Module):
 
         f_hat_or_idx_Bl: List[torch.Tensor] = []
 
-        patch_hws = [(pn, pn) if isinstance(pn, int) else (pn[0], pn[1]) for pn in
-                     (v_patch_nums or self.v_patch_nums)]  # from small to large
+        patch_hws = [(pn, pn) for pn in (v_patch_nums or self.v_patch_nums)]
         assert patch_hws[-1][0] == H and patch_hws[-1][1] == W, f'{patch_hws[-1]=} != ({H=}, {W=})'
 
         SN = len(patch_hws)
@@ -548,6 +547,8 @@ class VQVAE(nn.Module):
             vocab_size=vocab_size, Cvae=self.Cvae, using_znorm=using_znorm, beta=beta,
             default_qresi_counts=default_qresi_counts, v_patch_nums=v_patch_nums, quant_resi=quant_resi, share_quant_resi=share_quant_resi,
         )
+        self.v_patch_nums = v_patch_nums
+        self.patch_hws = [(pn, pn) for pn in self.v_patch_nums]
         self.quant_conv = torch.nn.Conv2d(self.Cvae, self.Cvae, quant_conv_ks, stride=1, padding=quant_conv_ks//2)
         self.post_quant_conv = torch.nn.Conv2d(self.Cvae, self.Cvae, quant_conv_ks, stride=1, padding=quant_conv_ks//2)
 

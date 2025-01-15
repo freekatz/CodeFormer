@@ -297,3 +297,5 @@ if __name__ == '__main__':
     logits, lq_feat = code_former(inp, w=0.1, code_only=True)
     print(logits.shape)
     print(lq_feat.shape)
+    # torch.Size([2, 256, 1024])
+    # torch.Size([2, 256, 16, 16])
