@@ -432,3 +432,74 @@ class VQGANDiscriminator(nn.Module):
 
     def forward(self, x):
         return self.main(x)
+
+
+if __name__ == '__main__':
+    import glob
+    import math
+    from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+
+    import PIL.Image as PImage
+    from torchvision.transforms import InterpolationMode, transforms
+    import torch
+
+    ckpt = '../../vqgan_code1024.pth'
+    vae = VQAutoEncoder(
+        img_size=512,
+        nf=64,
+        ch_mult=[1, 2, 2, 4, 4, 8],
+        model_path=ckpt,
+    )
+
+    def normalize_01_into_pm1(x):  # normalize x from [0, 1] to [-1, 1] by (x*2) - 1
+        return x.add(x).add_(-1)
+
+    def img_folder_to_tensor(img_folder: str, transform: transforms.Compose) -> torch.Tensor:
+        img_list = glob.glob(f'{img_folder}/*.png')
+        img_all = []
+        for img_path in img_list:
+            img_tensor = transform(PImage.open(img_path))
+            img_all.append(img_tensor)
+        img_tensor = torch.stack(img_all, dim=0)
+        return img_tensor
+
+    def tensor_to_img(img_tensor: torch.Tensor) -> PImage.Image:
+        B, C, H, W = img_tensor.shape
+        assert int(math.sqrt(B)) * int(math.sqrt(B)) == B
+        b = int(math.sqrt(B))
+        img_tensor = torch.permute(img_tensor, (1, 0, 2, 3))
+        img_tensor = torch.reshape(img_tensor, (C, b, b * H, W))
+        img_tensor = torch.permute(img_tensor, (0, 2, 1, 3))
+        img_tensor = torch.reshape(img_tensor, (C, b * H, b * W))
+        img = transforms.ToPILImage()(img_tensor)
+        return img
+
+    vae.eval()
+    # vae.load_state_dict(torch.load(vae_ckpt, map_location='cpu'), strict=True)
+
+    mid_reso = 1.125
+    final_reso = 512
+    mid_reso = round(min(mid_reso, 2) * final_reso)
+    aug = transforms.Compose(
+        [
+            # transforms.Resize(mid_reso, interpolation=InterpolationMode.LANCZOS),
+            # transforms.CenterCrop((final_reso, final_reso)),
+            transforms.Resize((final_reso, final_reso), interpolation=InterpolationMode.LANCZOS),
+            transforms.ToTensor()
+        ]
+    )
+    img = img_folder_to_tensor('../../tmp', aug)
+    print(img.shape)
+
+    in_img = tensor_to_img(img)
+    in_img.save('../../inp.png')
+
+    img = torch.clamp(img, 0., 1.)
+    img = img.add(img).add_(-1)
+    res, vq_loss, usages = vae.forward(img)
+    print(res.shape)
+    print(vq_loss)
+    print(usages)
+
+    res_img = tensor_to_img(res)
+    res_img.save('../../out.png')

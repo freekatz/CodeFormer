@@ -13,6 +13,11 @@ version.py
 *.pth
 *.dat
 *.zip
+*.png
+.idea/
+tmp/
+output/
+release/
 
 # template
 
