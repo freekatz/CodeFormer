@@ -103,15 +103,15 @@ class CodeFormerIdxModel2(SRModel):
         #     quant_feat_gt_list = self.hq_vqvae_fix.quantize.f_to_idxBl_or_fhat(x_hq, to_fhat=True)
         #     quant_feat_gt = torch.cat(quant_feat_gt_list, dim=1)
 
-        logits = self.net_g(self.input, w=0, code_only=True)
+        logits, lq_feat = self.net_g(self.input, w=0, code_only=True)
 
         l_g_total = 0
         loss_dict = OrderedDict()
-        # # hq_feat_loss
-        # if self.hq_feat_loss: # codebook loss
-        #     l_feat_encoder = torch.mean((quant_feat_gt.detach()-lq_feat)**2) * self.feat_loss_weight
-        #     l_g_total += l_feat_encoder
-        #     loss_dict['l_feat_encoder'] = l_feat_encoder
+        # hq_feat_loss
+        if self.hq_feat_loss: # codebook loss
+            l_feat_encoder = torch.mean((x_hq.detach()-lq_feat)**2) * self.feat_loss_weight
+            l_g_total += l_feat_encoder
+            loss_dict['l_feat_encoder'] = l_feat_encoder
 
         # cross_entropy_loss
         if self.cross_entropy_loss:

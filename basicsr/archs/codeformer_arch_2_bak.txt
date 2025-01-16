@@ -176,7 +176,7 @@ class AdaLNBeforeHead(nn.Module):
 class CodeFormer2(VQVAE):
     def __init__(self, dim_embd=640, n_head=8, n_layers=9,
                 codebook_size=4096, latent_size=32,
-                 connect_list=['32', '64', '128', '256'], vqvae_path=None):
+                connect_list=['32', '64', '128', '256'], vqvae_path=None):
         super(CodeFormer2, self).__init__(
             vocab_size=codebook_size, z_channels=32, ch=160, test_mode=False,
             share_quant_resi=4, v_patch_nums=(1, 2, 3, 4, 5, 6, 8, 10, 13, 16)
@@ -195,19 +195,14 @@ class CodeFormer2(VQVAE):
         self.connect_list = connect_list
         self.n_layers = n_layers
         self.dim_embd = dim_embd
-        self.dim_mlp = dim_embd*2
-
-        self.position_emb = nn.Parameter(torch.zeros(680, self.dim_embd))
-        # self.feat_emb = nn.Linear(latent_size * len(self.vae.v_patch_nums), self.dim_embd)
-        self.feat_emb = nn.ModuleList(
-            nn.Embedding(codebook_size, self.dim_embd)
-            for (ph, pw) in self.patch_hws
-        )
-
+        self.dim_mlp = dim_embd * 2
+        patchs = self.v_patch_nums[-1] * self.v_patch_nums[-1]
+        self.position_emb = nn.Parameter(torch.zeros(patchs, self.dim_embd))
+        self.feat_emb = nn.Linear(latent_size, self.dim_embd)
         # transformer
-        self.ft_layers = nn.Sequential(*[TransformerSALayer(embed_dim=dim_embd, nhead=n_head, dim_mlp=self.dim_mlp, dropout=0.0) 
-                                    for _ in range(self.n_layers)])
-
+        self.ft_layers = nn.Sequential(
+            *[TransformerSALayer(embed_dim=dim_embd, nhead=n_head, dim_mlp=self.dim_mlp, dropout=0.0)
+              for _ in range(self.n_layers)])
         # logits_predict head
         self.idx_pred_layer = nn.Sequential(
             nn.LayerNorm(dim_embd),
@@ -226,23 +221,22 @@ class CodeFormer2(VQVAE):
         # ################### Encoder #####################
         x = self.quant_conv(self.encoder(x))
         lq_feat = x  # B 32 16 16
-        idx_list = self.quantize.f_to_idxBl_or_fhat(lq_feat, to_fhat=False)
-        pos_emb = self.position_emb.unsqueeze(1).repeat(1,x.shape[0],1)
-
-        idx_embed_all = []
-        for i, idx in enumerate(idx_list):
-            idx_embed_all.append(self.feat_emb[i](idx))
-        idx_embed = torch.cat(idx_embed_all, dim=1).permute(1, 0, 2)
-        # torch.Size([256, 2, 640])
-        query_emb = idx_embed
+        # ################# Transformer ###################
+        # quant_feat, codebook_loss, quant_stats = self.quantize(lq_feat)
+        pos_emb = self.position_emb.unsqueeze(1).repeat(1, x.shape[0], 1)
+        # BCHW -> BC(HW) -> (HW)BC
+        feat_emb = self.feat_emb(lq_feat.flatten(2).permute(2, 0, 1))
+        query_emb = feat_emb
+        # Transformer encoder
         for layer in self.ft_layers:
             query_emb = layer(query_emb, query_pos=pos_emb)
 
-        # torch.Size([256, 2, 640])
-        logits = self.idx_pred_layer(query_emb)
-        logits = logits.permute(1,0,2)
-
+        # 256, 2, 512
+        # output logits
+        logits = self.idx_pred_layer(query_emb)  # (hw)bn
+        logits = logits.permute(1, 0, 2)  # (hw)bn -> b(hw)n
         return logits, lq_feat
+
 
 if __name__ == '__main__':
     code_former = CodeFormer2(

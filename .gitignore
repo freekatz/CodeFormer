@@ -18,6 +18,7 @@ version.py
 tmp/
 output/
 release/
+*.state
 
 # template
 
